@@ -1,0 +1,155 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Lorenzo A Sanchez"
+date: "September 15, 2017"
+output: html_document
+---
+
+## Prediction of Unilateral Dumbbell Biceps Curl exercise forms using Human Activity Recognition (HAR) devices.
+
+#### 1. Background and Objective
+The goal of this exercise is to develop a Machine Learning (ML) model using data collected from 6 participants wearing accelerometers on the belt, forearm, arm, and dumbbell that will predict which out of 5 exercise forms was used when performing a unilateral dumbbell bicep curl. Only class A is considered correct form while the other classes are not.
+
+#### 2. Data preparation
+
+##### 2.1 Loading the data and libraries
+
+The read.table statement will also turn "NA", "#DIV/0!", and empty strings to NA's.
+```{r warning=FALSE, message=FALSE, error=FALSE}
+library(caret); library(rattle); library(gridExtra); library(randomForest)
+
+setwd("C:/Users/lsanchez/Desktop/Coursera Data Science/Course 8 Practical Machine Learning")
+
+training <- read.table("./pml-training.csv", header = TRUE, 
+                       sep = ",", na.strings = c("NA","#DIV/0!",""), stringsAsFactors=FALSE)
+testing <- read.table("./pml-testing.csv", header = TRUE,
+                      sep = ",", na.strings = c("NA","#DIV/0!",""), stringsAsFactors=FALSE)
+```
+
+##### 2.2 Clean data
+
+###### 2.2.1 Remove dimensions with Near Zero Variance (NZV) or irrelevant labels
+Obtain NZV statistics to then clean data:
+```{r warning=FALSE, message=FALSE, error=FALSE}
+training_NZV <- nearZeroVar(training, saveMetrics=TRUE)
+
+training_no_NZV <- training[,!(training_NZV$zeroVar | training_NZV$nzv)]
+
+testing_no_NZV <- testing[,!(training_NZV$zeroVar | training_NZV$nzv)]
+```
+
+Removed the 36 variables with NZV leaving only 124 variables.
+
+Also remove ID column and raw day and second counts (columns 1, 3, and 4:
+```{r warning=FALSE, message=FALSE, error=FALSE}
+training_noNZV_noID <- training_no_NZV[,-c(1,3,4)]
+testing_noNZV_noID <- testing_no_NZV[,-c(1,3,4)]
+```
+
+###### 2.2.2 Remove dimensions where 90% or more of values are NAs
+```{r warning=FALSE, message=FALSE, error=FALSE}
+NA_percent = vector()
+
+for (i in 1:length(names(testing_noNZV_noID))) {
+  NA_percent[[i]] <-  sum(is.na(training_noNZV_noID[,i]))/length(training_noNZV_noID[,i])
+}
+
+NA_thereshold <- NA_percent < 0.9
+training_noNZV_noID_noNA <- training_noNZV_noID[,NA_thereshold] 
+
+testing_noNZV_noID_noNA <- testing_noNZV_noID[,NA_thereshold] 
+```
+
+###### 2.2.3 Convert Date values to Date class
+```{r warning=FALSE, message=FALSE, error=FALSE}
+training_noNZV_noID_noNA$cvtd_timestamp <-  as.Date(training_noNZV_noID_noNA$cvtd_timestamp, format = "%d/%m/%y")
+
+
+testing_noNZV_noID_noNA$cvtd_timestamp <-  as.Date(testing_noNZV_noID_noNA$cvtd_timestamp, format = "%d/%m/%y")
+
+training_clean <- training_noNZV_noID_noNA
+testing_clean <- testing_noNZV_noID_noNA
+```
+
+###### 2.2.4 Center, scale, and normalize numeric values
+
+Centering data will substract mean from value, scaling data will divide values by standard deviation, and normalizing values will transform range of values from 0 to 1.
+```{r warning=FALSE, message=FALSE, error=FALSE}
+numeric_dims = vector()
+
+for (i in 1:length(names(training_clean))) {
+  numeric_dims[i] <- is.numeric(training_clean[,i]) 
+}
+#Scale
+scale_params_training <- preProcess(training_clean[,numeric_dims], method=c("scale"))
+training_scaled <- predict(scale_params_training, training_clean[,numeric_dims])
+
+scale_params_testing <- preProcess(testing_clean[,numeric_dims], method=c("scale"))
+testing_scaled <- predict(scale_params_testing, testing_clean[,numeric_dims])  
+
+#Center
+center_params_training <- preProcess(training_scaled, method=c("center"))
+training_centered <- predict(center_params_training, training_scaled)
+
+center_params_testing <- preProcess(testing_scaled, method=c("center"))
+testing_centered <- predict(center_params_testing, testing_scaled) 
+
+#Normalize
+normalize_params_training <- preProcess(training_centered, method=c("range"))
+training_normalized <- predict(normalize_params_training, training_centered)
+
+normalize_params_testing <- preProcess(testing_centered, method=c("range"))
+testing_normalized <- predict(normalize_params_testing, testing_centered) 
+
+training_clean[,numeric_dims] <- training_normalized
+testing_clean[,numeric_dims] <- testing_normalized
+```
+
+##### 2.3 Partition training data into training and validation
+
+The validation partition will be 25% of the original training data.
+```{r warning=FALSE, message=FALSE, error=FALSE}
+
+set.seed(888)
+inTrain <- createDataPartition(y=training_clean$classe, p=0.75, list=FALSE)
+myTraining <- training_clean[inTrain, ]
+myTesting <- training_clean[-inTrain, ]
+```
+
+#### 3. Train Random Forest model
+```{r warning=FALSE, message=FALSE, error=FALSE}
+set.seed(888)
+RF_model <- train(classe~., method="rf", data=myTraining, trControl=trainControl(method="cv"),
+                  number=5, allowParallel=TRUE, importance=TRUE)
+print(RF_model)
+```
+The accurarcy of the trained random forest model on the training data is of 99.73%.
+
+```{r warning=FALSE, message=FALSE, error=FALSE}
+training_predict <- predict(RF_model,myTraining)
+confusionMatrix(training_predict,myTraining$classe)
+```
+
+```{r warning=FALSE, message=FALSE, error=FALSE}
+varImp(RF_model)
+```
+The five most important variables for prediction appear to be num_window, roll_belt, pitch_forearm, magnet_dumbbell_y, and magnet_dumbbell_z.
+
+#### 4. Validate Random Forest model
+
+```{r warning=FALSE, message=FALSE, error=FALSE}
+testing_predict <- predict(RF_model,myTesting)
+confusionMatrix(testing_predict,myTesting$classe)
+```
+When applying the trained Random Forest model to the validation set, the accuracy is 99.88%. No Class A false negatives were predicted, and only 6 false positives were.
+
+#### 5. Predict 20 test cases
+
+```{r warning=FALSE, message=FALSE, error=FALSE}
+Test_Answers = predict(RF_model, newdata=testing_clean)
+print(Test_Answers)
+```
+
+#### 6. References used
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
