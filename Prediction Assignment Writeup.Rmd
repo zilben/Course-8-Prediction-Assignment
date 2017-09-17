@@ -42,8 +42,9 @@ Removed the 36 variables with NZV leaving only 124 variables.
 
 Also remove ID column and raw day and second counts (columns 1, 3, and 4:
 ```{r warning=FALSE, message=FALSE, error=FALSE}
-training_noNZV_noID <- training_no_NZV[,-c(1,3,4)]
-testing_noNZV_noID <- testing_no_NZV[,-c(1,3,4)]
+training_noNZV_noID <- training_no_NZV[,-c(1,3,4,6)]
+testing_noNZV_noID <- testing_no_NZV[,-c(1,3,4,6)]
+head(testing_no_NZV)
 ```
 
 ###### 2.2.2 Remove dimensions where 90% or more of values are NAs
@@ -60,67 +61,29 @@ training_noNZV_noID_noNA <- training_noNZV_noID[,NA_thereshold]
 testing_noNZV_noID_noNA <- testing_noNZV_noID[,NA_thereshold] 
 ```
 
-###### 2.2.3 Convert Date values to Date class
+###### 2.2.3 Convert Date values to Date
 ```{r warning=FALSE, message=FALSE, error=FALSE}
-training_noNZV_noID_noNA$cvtd_timestamp <-  as.Date(training_noNZV_noID_noNA$cvtd_timestamp, format = "%d/%m/%y")
+training_noNZV_noID_noNA$cvtd_timestamp <-  as.Date(training_noNZV_noID_noNA$cvtd_timestamp, format = "%d/%m/%Y")
 
-
-testing_noNZV_noID_noNA$cvtd_timestamp <-  as.Date(testing_noNZV_noID_noNA$cvtd_timestamp, format = "%d/%m/%y")
+testing_noNZV_noID_noNA$cvtd_timestamp <-  as.Date(testing_noNZV_noID_noNA$cvtd_timestamp, format = "%d/%m/%Y")
 
 training_clean <- training_noNZV_noID_noNA
 testing_clean <- testing_noNZV_noID_noNA
 ```
 
-###### 2.2.4 Center, scale, and normalize numeric values
-
-Centering data will substract mean from value, scaling data will divide values by standard deviation, and normalizing values will transform range of values from 0 to 1.
-```{r warning=FALSE, message=FALSE, error=FALSE}
-numeric_dims = vector()
-
-for (i in 1:length(names(training_clean))) {
-  numeric_dims[i] <- is.numeric(training_clean[,i]) 
-}
-#Scale
-scale_params_training <- preProcess(training_clean[,numeric_dims], method=c("scale"))
-training_scaled <- predict(scale_params_training, training_clean[,numeric_dims])
-
-scale_params_testing <- preProcess(testing_clean[,numeric_dims], method=c("scale"))
-testing_scaled <- predict(scale_params_testing, testing_clean[,numeric_dims])  
-
-#Center
-center_params_training <- preProcess(training_scaled, method=c("center"))
-training_centered <- predict(center_params_training, training_scaled)
-
-center_params_testing <- preProcess(testing_scaled, method=c("center"))
-testing_centered <- predict(center_params_testing, testing_scaled) 
-
-#Normalize
-normalize_params_training <- preProcess(training_centered, method=c("range"))
-training_normalized <- predict(normalize_params_training, training_centered)
-
-normalize_params_testing <- preProcess(testing_centered, method=c("range"))
-testing_normalized <- predict(normalize_params_testing, testing_centered) 
-
-training_clean[,numeric_dims] <- training_normalized
-testing_clean[,numeric_dims] <- testing_normalized
-```
-
 ##### 2.3 Partition training data into training and validation
 
-The validation partition will be 25% of the original training data.
+The validation partition will be 20% of the original training data.
 ```{r warning=FALSE, message=FALSE, error=FALSE}
-
 set.seed(888)
-inTrain <- createDataPartition(y=training_clean$classe, p=0.75, list=FALSE)
+inTrain <- createDataPartition(y=training_clean$classe, p=0.70, list=FALSE)
 myTraining <- training_clean[inTrain, ]
 myTesting <- training_clean[-inTrain, ]
 ```
 
 #### 3. Train Random Forest model
 ```{r warning=FALSE, message=FALSE, error=FALSE}
-set.seed(888)
-RF_model <- train(classe~., method="rf", data=myTraining, trControl=trainControl(method="cv"),
-                  number=5, allowParallel=TRUE, importance=TRUE)
+RF_model <- train(classe~., method="rf", data=myTraining, allowParallel=TRUE, importance=TRUE)
 print(RF_model)
 ```
 The accurarcy of the trained random forest model on the training data is of 99.73%.
@@ -146,8 +109,12 @@ When applying the trained Random Forest model to the validation set, the accurac
 #### 5. Predict 20 test cases
 
 ```{r warning=FALSE, message=FALSE, error=FALSE}
-Test_Answers = predict(RF_model, newdata=testing_clean)
-print(Test_Answers)
+rm(Test_Answers)
+Test_Answers <- data.frame(1:20)
+Test_Answers$Predict = predict(RF_model, testing_clean)
+
+Test_Answers
+
 ```
 
 #### 6. References used
